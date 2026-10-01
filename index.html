@@ -216,13 +216,22 @@
                 if (action === 'pqr') {
                     datosFinales.push(parsearPQR(text));
                 } else if (action === 'actividades') {
-                    // El PDF de actividades devuelve un Array de múltiples actividades, las concatenamos
                     let acts = parsearActividades(text);
                     datosFinales = datosFinales.concat(acts);
                 }
             } catch (err) {
-                console.error("Error leyendo", file.name, err);
+                console.error("Error leyendo el PDF:", file.name, err);
+                statusDiv.innerText = `Error intentando leer el PDF: ${file.name}. Revisa la consola.`;
+                return; // Detiene el proceso
             }
+        }
+
+        // DEPURACIÓN: Muestra en la consola los datos que logró extraer
+        console.log("Datos extraídos listos para enviar:", datosFinales);
+
+        if (datosFinales.length === 0) {
+            statusDiv.innerText = "Error: No se encontró información válida para extraer del PDF.";
+            return;
         }
 
         statusDiv.innerText = `Enviando ${datosFinales.length} registros a la pestaña '${action}'...`;
@@ -230,18 +239,33 @@
         try {
             const response = await fetch(GOOGLE_SCRIPT_URL, {
                 method: "POST",
+                headers: { "Content-Type": "text/plain;charset=utf-8" }, // Ayuda con el CORS
                 body: JSON.stringify({ action: action, data: datosFinales })
             });
             
-            statusDiv.innerText = `¡Éxito! Datos guardados en '${action}'.`;
-            if(action === 'pqr') { archivosPQR = []; fileInputPQR.value = ""; btnProcesarPQR.disabled = true;}
-            if(action === 'actividades') { archivosAct = []; fileInputAct.value = ""; btnProcesarAct.disabled = true;}
+            // Ahora sí leemos la respuesta real de Google
+            const textResponse = await response.text(); 
+            let result;
+            try {
+                result = JSON.parse(textResponse);
+            } catch(e) {
+                throw new Error("Google no devolvió un JSON válido. Revisa los permisos (Cualquier persona).");
+            }
+            
+            if (result.success) {
+                statusDiv.innerText = `¡Éxito! Datos guardados en la pestaña '${action}'.`;
+                if(action === 'pqr') { archivosPQR = []; fileInputPQR.value = ""; btnProcesarPQR.disabled = true;}
+                if(action === 'actividades') { archivosAct = []; fileInputAct.value = ""; btnProcesarAct.disabled = true;}
+            } else {
+                statusDiv.innerText = `Error de Google Sheets: ${result.error}`;
+                console.error("Error devuelto por Apps Script:", result.error);
+            }
+            
         } catch (error) {
-            statusDiv.innerText = "Hubo un error enviando los datos. Revisa la consola.";
-            console.error(error);
+            statusDiv.innerText = "Error de conexión: " + error.message;
+            console.error("Error del Fetch:", error);
         }
     }
-
     btnProcesarPQR.addEventListener('click', () => procesarYEnviar(archivosPQR, 'pqr'));
     btnProcesarAct.addEventListener('click', () => procesarYEnviar(archivosAct, 'actividades'));
 
