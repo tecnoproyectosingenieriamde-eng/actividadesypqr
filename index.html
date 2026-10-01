@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procesador de PQRS</title>
+    <!-- Importamos la librería de Mozilla para leer PDFs en el navegador -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f7f6; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .drop-zone { border: 2px dashed #007bff; padding: 40px; text-align: center; color: #007bff; cursor: pointer; border-radius: 8px; margin-bottom: 20px;}
+        .drop-zone:hover { background-color: #f0f8ff; }
+        #status { margin-top: 15px; font-weight: bold; }
+        button { background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; width: 100%; font-size: 16px; }
+        button:disabled { background: #ccc; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Cargar PDFs de PQRS</h2>
+    <div class="drop-zone" id="dropZone">
+        Arrastra hasta 20 PDFs aquí o haz clic para seleccionar
+        <input type="file" id="fileInput" multiple accept="application/pdf" style="display: none;">
+    </div>
+    <button id="btnProcesar" disabled>Procesar y Enviar a Google Sheets</button>
+    <div id="status"></div>
+</div>
+
+<script>
+    // Configuración de pdf.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const btnProcesar = document.getElementById('btnProcesar');
+    const statusDiv = document.getElementById('status');
+    let archivosPendientes = [];
+    let datosExtraidos = [];
+
+    // Lógica de arrastrar y soltar
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e9ecef'; });
+    dropZone.addEventListener('dragleave', () => dropZone.style.backgroundColor = 'transparent');
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.style.backgroundColor = 'transparent';
+        handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    function handleFiles(files) {
+        archivosPendientes = Array.from(files).filter(file => file.type === 'application/pdf');
+        if (archivosPendientes.length > 0) {
+            statusDiv.innerText = `${archivosPendientes.length} archivos listos para procesar.`;
+            btnProcesar.disabled = false;
+        }
+    }
+
+    async function extractTextFromPDF(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            text += content.items.map(item => item.str).join(' ') + ' ';
+        }
+        return text;
+    }
+
+    function parsearDatos(texto) {
+        let resultado = { mes: "", fechaRadicado: "", nombre: "", cc: "", tel: "", direccion: "", barrio: "", ordenServicio: "" };
+        
+        // Expresiones regulares basadas en la estructura del PDF proporcionada
+        const matchFecha = texto.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
+        if (matchFecha) {
+            resultado.fechaRadicado = matchFecha[0];
+            const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+            resultado.mes = meses[parseInt(matchFecha[2], 10) - 1]; 
+        }
+
+        const matchOrden = texto.match(/(?:ORDEN DE SERVICIO:|SOLICITUD N°|SOLICITUD)\s*(\d+)/i);
+        if (matchOrden) resultado.ordenServicio = matchOrden[1];
+
+        const matchNombre = texto.match(/NOMBRE(?: DEL)? SOLICITANTE\s*(.+?)\s*(?:TELÉFONO|DIRECCIÓN|SECTOR)/i);
+        if (matchNombre) resultado.nombre = matchNombre[1].trim();
+
+        const matchCC = texto.match(/CC:\s*([\d,.]+)/);
+        if (matchCC) resultado.cc = matchCC[1].replace(/,/g, ''); // Quitamos las comas de los miles
+
+        const matchTel = texto.match(/TELÉFONO\s*(\d+)/);
+        if (matchTel) resultado.tel = matchTel[1];
+
+        const matchBarrio = texto.match(/(?:SECTOR O BARRIO|DIRECCIÓN, SECTOR O BARRIO)\s*(.+?)\s*(?:DIRECCIÓN|OBSERVACIONES|FECHA)/i);
+        if (matchBarrio) {
+            resultado.barrio = matchBarrio[1].trim();
+            resultado.direccion = matchBarrio[1].trim(); // Por defecto asume que es el mismo si no hay otro
+        }
+
+        const matchDir = texto.match(/DIRECCIÓN UBICACIÓN[\s\S]*?(?:general\))\s*(.+?)\s*(?:FIRMA|OBSERVACIONES)/i);
+        if(matchDir) resultado.direccion = matchDir[1].trim();
+
+        return resultado;
+    }
+
+    btnProcesar.addEventListener('click', async () => {
+        btnProcesar.disabled = true;
+        statusDiv.innerText = "Procesando PDFs... por favor espera.";
+        datosExtraidos = [];
+
+        for (let file of archivosPendientes) {
+            try {
+                let text = await extractTextFromPDF(file);
+                let datos = parsearDatos(text);
+                datosExtraidos.push(datos);
+            } catch (err) {
+                console.error("Error leyendo", file.name, err);
+            }
+        }
+
+        statusDiv.innerText = `Enviando ${datosExtraidos.length} registros a Google Sheets...`;
+        
+        // ========= ¡PEGAR AQUÍ TU URL DE GOOGLE APPS SCRIPT! =========
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby1bd3MebK5Pu9QAV0FsDOoDBZhk6Dg8cs0Ay33f3LVkydtAWRykO2hXWUtat_bRqk3/exec";
+        
+        try {
+            const response = await fetch(GOOGLE_SCRIPT_URL, {
+                method: "POST",
+                body: JSON.stringify(datosExtraidos)
+            });
+            
+            statusDiv.innerText = "¡Éxito! Datos insertados correctamente en la pestaña 'pqr'.";
+            archivosPendientes = [];
+            fileInput.value = "";
+        } catch (error) {
+            statusDiv.innerText = "Hubo un error enviando los datos. Revisa la consola.";
+            console.error(error);
+        }
+        btnProcesar.disabled = false;
+    });
+</script>
+</body>
+</html>
