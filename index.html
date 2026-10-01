@@ -7,21 +7,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f7f6; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        /* NUEVO: Actualizado a 3 columnas */
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
         .drop-zone { border: 2px dashed #007bff; padding: 30px; text-align: center; color: #007bff; cursor: pointer; border-radius: 8px; }
         .drop-zone:hover { background-color: #f0f8ff; }
         .drop-zone.actividades { border-color: #28a745; color: #28a745; }
         .drop-zone.actividades:hover { background-color: #eafaf1; }
+        /* NUEVO: Estilos para la zona de Tabla */
+        .drop-zone.tabla { border-color: #17a2b8; color: #17a2b8; }
+        .drop-zone.tabla:hover { background-color: #e0f7fa; }
+        
         #status { margin-top: 15px; font-weight: bold; text-align: center; padding: 10px;}
         button { color: white; border: none; padding: 10px; cursor: pointer; border-radius: 5px; width: 100%; font-size: 16px; margin-top: 10px;}
         .btn-pqr { background: #007bff; }
         .btn-act { background: #28a745; }
+        /* NUEVO: Botón Tabla */
+        .btn-tabla { background: #17a2b8; }
+        
         button:disabled { background: #ccc !important; }
     </style>
 </head>
 <body>
-
 <div class="container">
     <h2 style="text-align: center;">Extractor de PDFs para Sheets</h2>
     
@@ -35,7 +42,6 @@
             </div>
             <button id="btnProcesarPQR" class="btn-pqr" disabled>Procesar PQR</button>
         </div>
-
         <!-- ZONA ACTIVIDADES -->
         <div>
             <h3 style="color:#28a745">2. Cargar Cronograma</h3>
@@ -45,14 +51,21 @@
             </div>
             <button id="btnProcesarAct" class="btn-act" disabled>Procesar Actividades</button>
         </div>
+        <!-- ZONA TABLA (NUEVO) -->
+        <div>
+            <h3 style="color:#17a2b8">3. Cargar Tabla Diaria</h3>
+            <div class="drop-zone tabla" id="dropZoneTabla">
+                Arrastra PDF de Tabla aquí
+                <input type="file" id="fileInputTabla" multiple accept="application/pdf" style="display: none;">
+            </div>
+            <button id="btnProcesarTabla" class="btn-tabla" disabled>Procesar Tabla</button>
+        </div>
     </div>
-
     <div id="status"></div>
 </div>
-
 <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-
+    
     // ======== LÓGICA DE INTERFAZ ========
     const dropZonePQR = document.getElementById('dropZonePQR');
     const fileInputPQR = document.getElementById('fileInputPQR');
@@ -61,12 +74,18 @@
     const dropZoneAct = document.getElementById('dropZoneAct');
     const fileInputAct = document.getElementById('fileInputAct');
     const btnProcesarAct = document.getElementById('btnProcesarAct');
+
+    // NUEVO: Variables para Tabla
+    const dropZoneTabla = document.getElementById('dropZoneTabla');
+    const fileInputTabla = document.getElementById('fileInputTabla');
+    const btnProcesarTabla = document.getElementById('btnProcesarTabla');
     
     const statusDiv = document.getElementById('status');
-
+    
     let archivosPQR = [];
     let archivosAct = [];
-
+    let archivosTabla = []; // NUEVO
+    
     // Setup PQR
     dropZonePQR.addEventListener('click', () => fileInputPQR.click());
     fileInputPQR.addEventListener('change', (e) => {
@@ -74,13 +93,21 @@
         btnProcesarPQR.disabled = archivosPQR.length === 0;
         statusDiv.innerText = `${archivosPQR.length} PDFs de PQR listos.`;
     });
-
+    
     // Setup Actividades
     dropZoneAct.addEventListener('click', () => fileInputAct.click());
     fileInputAct.addEventListener('change', (e) => {
         archivosAct = Array.from(e.target.files);
         btnProcesarAct.disabled = archivosAct.length === 0;
         statusDiv.innerText = `${archivosAct.length} PDFs de Actividades listos.`;
+    });
+
+    // NUEVO: Setup Tabla
+    dropZoneTabla.addEventListener('click', () => fileInputTabla.click());
+    fileInputTabla.addEventListener('change', (e) => {
+        archivosTabla = Array.from(e.target.files);
+        btnProcesarTabla.disabled = archivosTabla.length === 0;
+        statusDiv.innerText = `${archivosTabla.length} PDFs de Tabla listos.`;
     });
 
     async function extractTextFromPDF(file) {
@@ -93,8 +120,6 @@
             
             let lastY = -1;
             content.items.forEach(item => {
-                // Truco maestro: Redondear la coordenada Y con tolerancia de 3 píxeles
-                // Esto fuerza a que los datos de una tabla queden en la misma línea
                 let currentY = Math.round(item.transform[5]); 
                 if (lastY !== -1 && Math.abs(lastY - currentY) > 3) {
                     text += '\n';
@@ -104,13 +129,11 @@
             });
             text += '\n';
         }
-        // Imprimimos el texto real en la consola para depurar si hace falta
         console.log("TEXTO CRUDO EXTRAÍDO DEL PDF:\n", text);
         return text;
     }
 
-    // ======== PARSEADORES ========
-
+    // ======== PARSEADORES EXISTENTES ========
     function parsearPQR(texto) {
         let resultado = { mes: "", fechaRadicado: "", nombre: "", cc: "", tel: "", direccion: "", barrio: "", ordenServicio: "", fechaRespuesta: "" };
         
@@ -120,61 +143,42 @@
             const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
             resultado.mes = meses[parseInt(matchFecha[2], 10) - 1]; 
         }
-
         const matchFechaServicio = texto.match(/FECHA SERVICIO\s*(\d{2}\/\d{2}\/\d{4})/i);
         if (matchFechaServicio) resultado.fechaRespuesta = matchFechaServicio[1];
-
         const matchOrden = texto.match(/(?:ORDEN DE SERVICIO:|SOLICITUD N°|SOLICITUD)\s*(\d+)/i);
         if (matchOrden) resultado.ordenServicio = matchOrden[1];
-
         const matchNombre = texto.match(/NOMBRE(?: DEL)? SOLICITANTE\s*(.+?)\s*(?:TELÉFONO|DIRECCIÓN|SECTOR)/i);
         if (matchNombre) resultado.nombre = matchNombre[1].trim();
-
         const matchCC = texto.match(/CC:\s*([\d,.]+)/);
         if (matchCC) resultado.cc = matchCC[1].replace(/,/g, ''); 
-
         const matchTel = texto.match(/TELÉFONO\s*(\d+)/);
         if (matchTel) resultado.tel = matchTel[1];
-
         const matchBarrio = texto.match(/(?:SECTOR O BARRIO|DIRECCIÓN, SECTOR O BARRIO)\s*(.+?)\s*(?:DIRECCIÓN|OBSERVACIONES|FECHA)/i);
         if (matchBarrio) {
             resultado.barrio = matchBarrio[1].trim();
             resultado.direccion = matchBarrio[1].trim(); 
         }
-
         const matchDir = texto.match(/DIRECCIÓN UBICACIÓN[\s\S]*?(?:general\))\s*(.+?)\s*(?:FIRMA|OBSERVACIONES)/i);
         if(matchDir) resultado.direccion = matchDir[1].trim();
-
         return resultado;
     }
 
     function parsearActividades(texto) {
         let actividadesExtraidas = [];
-        // Limpiamos y eliminamos líneas vacías
         let lineas = texto.split('\n').map(l => l.trim()).filter(l => l !== "");
         
-        // Expresión regular para validar una fecha individual (ej: 8/04/26 o 08/04/2026)
         const regexFechaUnica = /^\d{1,2}\/\d{2}\/\d{2,4}$/;
-
         for (let i = 0; i < lineas.length - 1; i++) {
-            // Verificamos si la línea 'i' es Fecha Inicio Y la línea 'i+1' es Fecha Fin
             if (regexFechaUnica.test(lineas[i]) && regexFechaUnica.test(lineas[i+1])) {
                 let fechaInicio = lineas[i];
                 let fechaFin = lineas[i+1];
                 
-                // La descripción está en la línea inmediatamente anterior a la Fecha Inicio
                 let textoPrevio = (i > 0) ? lineas[i-1] : "";
-
-                // Evitar capturar encabezados de la tabla
                 if (!textoPrevio || textoPrevio.includes("Fecha de inicio") || textoPrevio.includes("Nombre")) {
                     continue;
                 }
-
-                // Separar el Tipo de Actividad (Título en MAYÚSCULAS) de la Descripción
                 let tipoActividad = "";
                 let descripcion = textoPrevio;
-
-                // Coincidir con títulos en MAYÚSCULAS al inicio (ej: EXPANSIÓN, ORGANIZACIÓN BODEGA, OBRA EXCLUSIVA DE EXPANSIÓN)
                 let matchTipo = textoPrevio.match(/^([A-ZÁÉÍÓÚÑ0-9\s]{3,})\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ].*)$/);
                 if (matchTipo) {
                     tipoActividad = matchTipo[1].trim();
@@ -182,8 +186,7 @@
                 } else {
                     tipoActividad = textoPrevio;
                 }
-
-                // Extraer el Nombre del MES
+                
                 let mesStr = "";
                 let partesFecha = fechaInicio.split("/");
                 if (partesFecha.length === 3) {
@@ -193,27 +196,19 @@
                         mesStr = meses[numMes - 1];
                     }
                 }
-
-                // Extraer Carga W (ej: 40W, 70W, 6W)
                 let cargaWMatch = descripcion.match(/(\d+)\s*W/i);
                 let cargaW = cargaWMatch ? cargaWMatch[1] : "";
-
-                // Extraer tecnología si existe en el texto
                 let tech = "";
                 if (/led/i.test(descripcion)) tech += "LED ";
                 if (/sodio/i.test(descripcion)) tech += "SODIO ";
                 if (/roy alpha/i.test(descripcion)) tech += "Roy Alpha";
                 tech = tech.trim();
-
                 let tipoLuminariaFinal = tipoActividad;
                 if (tech && !tipoActividad.toLowerCase().includes(tech.toLowerCase())) {
                     tipoLuminariaFinal += " " + tech;
                 }
-
-                // Extraer Sector, Barrio, Vereda o Corregimiento
                 let dirMatch = descripcion.match(/(?:sector|barrio|vereda|corregimiento|calle|cra|carrera|parque)\s+(?:de\s+)?([^,.]+)/i);
                 let direccion = dirMatch ? dirMatch[0].trim() : "";
-
                 actividadesExtraidas.push({
                     mes: mesStr,
                     fecha: fechaInicio,
@@ -222,24 +217,64 @@
                     descripcion: descripcion,
                     direccion: direccion
                 });
-
-                // Avanzamos un índice adicional para no reprocesar la Fecha Fin
                 i++;
             }
         }
-        
         console.log("Actividades procesadas con éxito:", actividadesExtraidas);
         return actividadesExtraidas;
     }
+
+    // ======== NUEVO: PARSEADOR DE TABLAS ========
+    function parsearTabla(texto) {
+        let datosExtraidos = [];
+        let textoLimpio = texto.replace(/\n/g, ' '); 
+        
+        let filas = textoLimpio.split(/(?=\b\d{2}\/\d{2}\/\d{4}\b)/);
+
+        for (let i = 0; i < filas.length; i++) {
+            let fila = filas[i].trim();
+            if (!fila.match(/^\d{2}\/\d{2}\/\d{4}/)) continue;
+
+            let regex = /^(\d{2}\/\d{2}\/\d{4})\s+(\S+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(-?\d+\.\d+\s*[, ]\s*-?\d+\.\d+|0)\s+([\s\S]*)$/i;
+            let match = fila.match(regex);
+            
+            if (match) {
+                let restoTexto = match[7] ? match[7].trim() : "";
+                restoTexto = restoTexto.replace(/\s+[A-Za-zÁÉÍÓÚáéíóúñÑ]+\s*\d*$/, '').trim();
+
+                let descripcion = restoTexto;
+                let direccion = "";
+                let matchDir = restoTexto.match(/\b(Parque|Sector|Ruta|Barrio|Vereda|Truchera|Corregimiento|Oficina|Pan de azúcar).*/i);
+                
+                if (matchDir) {
+                    direccion = matchDir[0].trim();
+                    descripcion = restoTexto.substring(0, restoTexto.indexOf(direccion)).trim();
+                }
+
+                datosExtraidos.push({
+                    fecha: match[1],
+                    tipo: match[2],
+                    cargaW: match[3],
+                    codigoLuminaria: match[4],
+                    codigoApoyo: match[5],
+                    coordenadas: match[6].replace(/\s+/g, ''), 
+                    descripcion: descripcion || restoTexto, 
+                    direccion: direccion
+                });
+            }
+        }
+        console.log("Datos de la Tabla extraídos:", datosExtraidos);
+        return datosExtraidos;
+    }
+
     // ======== ENVIADOR A GOOGLE SHEETS ========
-
-    // REEMPLAZA ESTA URL CON TU URL DE APPS SCRIPT
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzJ6XpoiO3Pg74ZJ92WkVo3nQCOAru1Q8JQ4Ei1Q51xUWmxhh9nlMj42-D5Zmi-f7cS/exec";
-
+    // Mantiene tu enlace exacto
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzVV-0LV_HymvR1inJV65Nefpg-YOuO6vIVMuP1eWytuyTUFIv4ELLcQtgTIUM_L8jj/exec";
+    
     async function procesarYEnviar(archivos, action) {
         statusDiv.innerText = "Procesando PDFs... por favor espera.";
         let datosFinales = [];
-
+        
         for (let file of archivos) {
             try {
                 let text = await extractTextFromPDF(file);
@@ -248,32 +283,33 @@
                 } else if (action === 'actividades') {
                     let acts = parsearActividades(text);
                     datosFinales = datosFinales.concat(acts);
+                } 
+                // NUEVO: Acción para procesar Tablas
+                else if (action === 'Tabla') {
+                    let tabs = parsearTabla(text);
+                    datosFinales = datosFinales.concat(tabs);
                 }
             } catch (err) {
                 console.error("Error leyendo el PDF:", file.name, err);
                 statusDiv.innerText = `Error intentando leer el PDF: ${file.name}. Revisa la consola.`;
-                return; // Detiene el proceso
+                return; 
             }
         }
-
-        // DEPURACIÓN: Muestra en la consola los datos que logró extraer
+        
         console.log("Datos extraídos listos para enviar:", datosFinales);
-
         if (datosFinales.length === 0) {
             statusDiv.innerText = "Error: No se encontró información válida para extraer del PDF.";
             return;
         }
-
         statusDiv.innerText = `Enviando ${datosFinales.length} registros a la pestaña '${action}'...`;
         
         try {
             const response = await fetch(GOOGLE_SCRIPT_URL, {
                 method: "POST",
-                headers: { "Content-Type": "text/plain;charset=utf-8" }, // Ayuda con el CORS
+                headers: { "Content-Type": "text/plain;charset=utf-8" }, 
                 body: JSON.stringify({ action: action, data: datosFinales })
             });
             
-            // Ahora sí leemos la respuesta real de Google
             const textResponse = await response.text(); 
             let result;
             try {
@@ -284,8 +320,13 @@
             
             if (result.success) {
                 statusDiv.innerText = `¡Éxito! Datos guardados en la pestaña '${action}'.`;
-                if(action === 'pqr') { archivosPQR = []; fileInputPQR.value = ""; btnProcesarPQR.disabled = true;}
-                if(action === 'actividades') { archivosAct = []; fileInputAct.value = ""; btnProcesarAct.disabled = true;}
+                
+                // Reiniciar interfaz según el tipo
+                if(action === 'pqr') { archivosPQR = []; fileInputPQR.value = ""; btnProcesarPQR.disabled = true; }
+                if(action === 'actividades') { archivosAct = []; fileInputAct.value = ""; btnProcesarAct.disabled = true; }
+                // NUEVO: Reiniciar campos de Tabla
+                if(action === 'Tabla') { archivosTabla = []; fileInputTabla.value = ""; btnProcesarTabla.disabled = true; }
+                
             } else {
                 statusDiv.innerText = `Error de Google Sheets: ${result.error}`;
                 console.error("Error devuelto por Apps Script:", result.error);
@@ -296,8 +337,12 @@
             console.error("Error del Fetch:", error);
         }
     }
+
+    // BOTONES DE EJECUCIÓN
     btnProcesarPQR.addEventListener('click', () => procesarYEnviar(archivosPQR, 'pqr'));
     btnProcesarAct.addEventListener('click', () => procesarYEnviar(archivosAct, 'actividades'));
+    // NUEVO: Botón de Tabla
+    btnProcesarTabla.addEventListener('click', () => procesarYEnviar(archivosTabla, 'Tabla'));
 
 </script>
 </body>
