@@ -3,60 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Procesador de PQRS</title>
-    <!-- Importamos la librería de Mozilla para leer PDFs en el navegador -->
+    <title>Procesador PDF a Sheets</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f7f6; }
-        .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .drop-zone { border: 2px dashed #007bff; padding: 40px; text-align: center; color: #007bff; cursor: pointer; border-radius: 8px; margin-bottom: 20px;}
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .drop-zone { border: 2px dashed #007bff; padding: 30px; text-align: center; color: #007bff; cursor: pointer; border-radius: 8px; }
         .drop-zone:hover { background-color: #f0f8ff; }
-        #status { margin-top: 15px; font-weight: bold; }
-        button { background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; width: 100%; font-size: 16px; }
-        button:disabled { background: #ccc; }
+        .drop-zone.actividades { border-color: #28a745; color: #28a745; }
+        .drop-zone.actividades:hover { background-color: #eafaf1; }
+        #status { margin-top: 15px; font-weight: bold; text-align: center; padding: 10px;}
+        button { color: white; border: none; padding: 10px; cursor: pointer; border-radius: 5px; width: 100%; font-size: 16px; margin-top: 10px;}
+        .btn-pqr { background: #007bff; }
+        .btn-act { background: #28a745; }
+        button:disabled { background: #ccc !important; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Cargar PDFs de PQRS</h2>
-    <div class="drop-zone" id="dropZone">
-        Arrastra hasta 20 PDFs aquí o haz clic para seleccionar
-        <input type="file" id="fileInput" multiple accept="application/pdf" style="display: none;">
+    <h2 style="text-align: center;">Extractor de PDFs para Sheets</h2>
+    
+    <div class="grid">
+        <!-- ZONA PQR -->
+        <div>
+            <h3 style="color:#007bff">1. Cargar PQRS</h3>
+            <div class="drop-zone" id="dropZonePQR">
+                Arrastra PDFs de PQRS aquí
+                <input type="file" id="fileInputPQR" multiple accept="application/pdf" style="display: none;">
+            </div>
+            <button id="btnProcesarPQR" class="btn-pqr" disabled>Procesar PQR</button>
+        </div>
+
+        <!-- ZONA ACTIVIDADES -->
+        <div>
+            <h3 style="color:#28a745">2. Cargar Cronograma</h3>
+            <div class="drop-zone actividades" id="dropZoneAct">
+                Arrastra el PDF del Cronograma aquí
+                <input type="file" id="fileInputAct" multiple accept="application/pdf" style="display: none;">
+            </div>
+            <button id="btnProcesarAct" class="btn-act" disabled>Procesar Actividades</button>
+        </div>
     </div>
-    <button id="btnProcesar" disabled>Procesar y Enviar a Google Sheets</button>
+
     <div id="status"></div>
 </div>
 
 <script>
-    // Configuración de pdf.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const btnProcesar = document.getElementById('btnProcesar');
+    // ======== LÓGICA DE INTERFAZ ========
+    const dropZonePQR = document.getElementById('dropZonePQR');
+    const fileInputPQR = document.getElementById('fileInputPQR');
+    const btnProcesarPQR = document.getElementById('btnProcesarPQR');
+    
+    const dropZoneAct = document.getElementById('dropZoneAct');
+    const fileInputAct = document.getElementById('fileInputAct');
+    const btnProcesarAct = document.getElementById('btnProcesarAct');
+    
     const statusDiv = document.getElementById('status');
-    let archivosPendientes = [];
-    let datosExtraidos = [];
 
-    // Lógica de arrastrar y soltar
-    dropZone.addEventListener('click', () => fileInput.click());
-    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e9ecef'; });
-    dropZone.addEventListener('dragleave', () => dropZone.style.backgroundColor = 'transparent');
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropZone.style.backgroundColor = 'transparent';
-        handleFiles(e.dataTransfer.files);
+    let archivosPQR = [];
+    let archivosAct = [];
+
+    // Setup PQR
+    dropZonePQR.addEventListener('click', () => fileInputPQR.click());
+    fileInputPQR.addEventListener('change', (e) => {
+        archivosPQR = Array.from(e.target.files);
+        btnProcesarPQR.disabled = archivosPQR.length === 0;
+        statusDiv.innerText = `${archivosPQR.length} PDFs de PQR listos.`;
     });
-    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-    function handleFiles(files) {
-        archivosPendientes = Array.from(files).filter(file => file.type === 'application/pdf');
-        if (archivosPendientes.length > 0) {
-            statusDiv.innerText = `${archivosPendientes.length} archivos listos para procesar.`;
-            btnProcesar.disabled = false;
-        }
-    }
+    // Setup Actividades
+    dropZoneAct.addEventListener('click', () => fileInputAct.click());
+    fileInputAct.addEventListener('change', (e) => {
+        archivosAct = Array.from(e.target.files);
+        btnProcesarAct.disabled = archivosAct.length === 0;
+        statusDiv.innerText = `${archivosAct.length} PDFs de Actividades listos.`;
+    });
 
     async function extractTextFromPDF(file) {
         const arrayBuffer = await file.arrayBuffer();
@@ -65,16 +90,23 @@
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
-            text += content.items.map(item => item.str).join(' ') + ' ';
+            // Para mantener saltos de línea (útil en el cronograma)
+            let lastY = -1;
+            content.items.forEach(item => {
+                if (lastY != item.transform[5] && lastY != -1) text += '\n';
+                text += item.str + ' ';
+                lastY = item.transform[5];
+            });
+            text += '\n';
         }
         return text;
     }
 
-    function parsearDatos(texto) {
-        // Añadimos 'fechaRespuesta' al objeto inicial
+    // ======== PARSEADORES ========
+
+    function parsearPQR(texto) {
         let resultado = { mes: "", fechaRadicado: "", nombre: "", cc: "", tel: "", direccion: "", barrio: "", ordenServicio: "", fechaRespuesta: "" };
         
-        // Expresiones regulares basadas en la estructura del PDF proporcionada
         const matchFecha = texto.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
         if (matchFecha) {
             resultado.fechaRadicado = matchFecha[0];
@@ -82,11 +114,8 @@
             resultado.mes = meses[parseInt(matchFecha[2], 10) - 1]; 
         }
 
-        // NUEVO: Extraer la fecha de servicio
         const matchFechaServicio = texto.match(/FECHA SERVICIO\s*(\d{2}\/\d{2}\/\d{4})/i);
-        if (matchFechaServicio) {
-            resultado.fechaRespuesta = matchFechaServicio[1];
-        }
+        if (matchFechaServicio) resultado.fechaRespuesta = matchFechaServicio[1];
 
         const matchOrden = texto.match(/(?:ORDEN DE SERVICIO:|SOLICITUD N°|SOLICITUD)\s*(\d+)/i);
         if (matchOrden) resultado.ordenServicio = matchOrden[1];
@@ -111,41 +140,111 @@
 
         return resultado;
     }
-    btnProcesar.addEventListener('click', async () => {
-        btnProcesar.disabled = true;
-        statusDiv.innerText = "Procesando PDFs... por favor espera.";
-        datosExtraidos = [];
 
-        for (let file of archivosPendientes) {
+    function parsearActividades(texto) {
+        let actividadesExtraidas = [];
+        // Separamos el texto por saltos de línea y limpiamos
+        let lineas = texto.split('\n').map(l => l.trim()).filter(l => l !== "");
+        
+        // Expresión regular para detectar fechas como 8/04/26 o 10/04/2026
+        const regexFecha = /^(\d{1,2}\/\d{2}\/\d{2,4})\s+(\d{1,2}\/\d{2}\/\d{2,4})$/;
+        
+        for (let i = 0; i < lineas.length; i++) {
+            // Buscamos líneas que contengan las dos fechas de inicio y fin (ej: "8/04/26 8/04/26")
+            let matchFecha = lineas[i].match(regexFecha);
+            if (matchFecha) {
+                // Si encontramos fechas, la descripción está en la línea anterior (o en las dos anteriores)
+                let fechaInicio = matchFecha[1];
+                let tituloTarea = i >= 2 ? lineas[i-2] : ""; // Ej: MANTENIMIENTO
+                let descripcion = i >= 1 ? lineas[i-1] : ""; // Ej: Mantenimiento en el sector...
+                
+                // Limpieza básica si el parser junta título y descripción
+                if (tituloTarea === "Nombre Fecha de inicio Fecha de fin" || tituloTarea.includes("EXPANSIÓN")) {
+                    tituloTarea = lineas[i-1].split(" ")[0]; // Intentar extraer la primera palabra
+                }
+
+                // Intentar extraer el Mes
+                let mesStr = "";
+                let partesFecha = fechaInicio.split("/");
+                if (partesFecha.length === 3) {
+                    const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+                    mesStr = meses[parseInt(partesFecha[1], 10) - 1];
+                }
+
+                // Análisis de Inteligencia Artificial básica usando Regex para extraer datos ocultos en la descripción
+                
+                // 1. Extraer Dirección/Sector (Busca palabras como sector, barrio, vereda, cra, calle)
+                let direccionMatch = descripcion.match(/(?:sector|barrio|vereda|cra|calle)\s+([^,.]+)/i);
+                let direccion = direccionMatch ? direccionMatch[0].trim() : "";
+
+                // 2. Extraer Carga W (Busca números seguidos de W, ej: 40W o 70W)
+                let cargaWMatch = descripcion.match(/(\d+)\s*W/i);
+                let cargaW = cargaWMatch ? cargaWMatch[1] : "";
+
+                // 3. Extraer Tipo Luminaria (Busca palabras clave, ej: led, sodio, Roy Alpha)
+                let tipoLuminaria = "";
+                if (descripcion.toLowerCase().includes("led")) tipoLuminaria = "LED";
+                if (descripcion.toLowerCase().includes("sodio")) tipoLuminaria = "SODIO";
+                if (descripcion.toLowerCase().includes("roy alpha")) tipoLuminaria += " Roy Alpha";
+
+                // Construimos el objeto
+                actividadesExtraidas.push({
+                    mes: mesStr,
+                    fecha: fechaInicio,
+                    tipoLuminaria: (tituloTarea + " " + tipoLuminaria).trim(), // Juntamos el título de tarea (EXPANSIÓN) con el tipo (LED)
+                    cargaW: cargaW,
+                    descripcion: descripcion,
+                    direccion: direccion
+                });
+            }
+        }
+        return actividadesExtraidas;
+    }
+
+    // ======== ENVIADOR A GOOGLE SHEETS ========
+
+    // REEMPLAZA ESTA URL CON TU URL DE APPS SCRIPT
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxlvK1NRB3G0BEnMbNcKkNIwcFpTYvqlZYPQlTCfHFWGUiaoAKju9kV4qfBJ5slthsn/exec";
+
+    async function procesarYEnviar(archivos, action) {
+        statusDiv.innerText = "Procesando PDFs... por favor espera.";
+        let datosFinales = [];
+
+        for (let file of archivos) {
             try {
                 let text = await extractTextFromPDF(file);
-                let datos = parsearDatos(text);
-                datosExtraidos.push(datos);
+                if (action === 'pqr') {
+                    datosFinales.push(parsearPQR(text));
+                } else if (action === 'actividades') {
+                    // El PDF de actividades devuelve un Array de múltiples actividades, las concatenamos
+                    let acts = parsearActividades(text);
+                    datosFinales = datosFinales.concat(acts);
+                }
             } catch (err) {
                 console.error("Error leyendo", file.name, err);
             }
         }
 
-        statusDiv.innerText = `Enviando ${datosExtraidos.length} registros a Google Sheets...`;
-        
-        // ========= ¡PEGAR AQUÍ TU URL DE GOOGLE APPS SCRIPT! =========
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxxjXZA3dLh5hkq1ukVtdXF9pNty7YXNDeJQgd2PrYs09Jsvbn5YR-xLrECDk1IhLBX/exec";
+        statusDiv.innerText = `Enviando ${datosFinales.length} registros a la pestaña '${action}'...`;
         
         try {
             const response = await fetch(GOOGLE_SCRIPT_URL, {
                 method: "POST",
-                body: JSON.stringify(datosExtraidos)
+                body: JSON.stringify({ action: action, data: datosFinales })
             });
             
-            statusDiv.innerText = "¡Éxito! Datos insertados correctamente en la pestaña 'pqr'.";
-            archivosPendientes = [];
-            fileInput.value = "";
+            statusDiv.innerText = `¡Éxito! Datos guardados en '${action}'.`;
+            if(action === 'pqr') { archivosPQR = []; fileInputPQR.value = ""; btnProcesarPQR.disabled = true;}
+            if(action === 'actividades') { archivosAct = []; fileInputAct.value = ""; btnProcesarAct.disabled = true;}
         } catch (error) {
             statusDiv.innerText = "Hubo un error enviando los datos. Revisa la consola.";
             console.error(error);
         }
-        btnProcesar.disabled = false;
-    });
+    }
+
+    btnProcesarPQR.addEventListener('click', () => procesarYEnviar(archivosPQR, 'pqr'));
+    btnProcesarAct.addEventListener('click', () => procesarYEnviar(archivosAct, 'actividades'));
+
 </script>
 </body>
 </html>
