@@ -71,7 +71,8 @@
     }
 
     function parsearDatos(texto) {
-        let resultado = { mes: "", fechaRadicado: "", nombre: "", cc: "", tel: "", direccion: "", barrio: "", ordenServicio: "" };
+        // Añadimos 'fechaRespuesta' al objeto inicial
+        let resultado = { mes: "", fechaRadicado: "", nombre: "", cc: "", tel: "", direccion: "", barrio: "", ordenServicio: "", fechaRespuesta: "" };
         
         // Expresiones regulares basadas en la estructura del PDF proporcionada
         const matchFecha = texto.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/);
@@ -81,6 +82,12 @@
             resultado.mes = meses[parseInt(matchFecha[2], 10) - 1]; 
         }
 
+        // NUEVO: Extraer la fecha de servicio
+        const matchFechaServicio = texto.match(/FECHA SERVICIO\s*(\d{2}\/\d{2}\/\d{4})/i);
+        if (matchFechaServicio) {
+            resultado.fechaRespuesta = matchFechaServicio[1];
+        }
+
         const matchOrden = texto.match(/(?:ORDEN DE SERVICIO:|SOLICITUD N°|SOLICITUD)\s*(\d+)/i);
         if (matchOrden) resultado.ordenServicio = matchOrden[1];
 
@@ -88,7 +95,7 @@
         if (matchNombre) resultado.nombre = matchNombre[1].trim();
 
         const matchCC = texto.match(/CC:\s*([\d,.]+)/);
-        if (matchCC) resultado.cc = matchCC[1].replace(/,/g, ''); // Quitamos las comas de los miles
+        if (matchCC) resultado.cc = matchCC[1].replace(/,/g, ''); 
 
         const matchTel = texto.match(/TELÉFONO\s*(\d+)/);
         if (matchTel) resultado.tel = matchTel[1];
@@ -96,7 +103,7 @@
         const matchBarrio = texto.match(/(?:SECTOR O BARRIO|DIRECCIÓN, SECTOR O BARRIO)\s*(.+?)\s*(?:DIRECCIÓN|OBSERVACIONES|FECHA)/i);
         if (matchBarrio) {
             resultado.barrio = matchBarrio[1].trim();
-            resultado.direccion = matchBarrio[1].trim(); // Por defecto asume que es el mismo si no hay otro
+            resultado.direccion = matchBarrio[1].trim(); 
         }
 
         const matchDir = texto.match(/DIRECCIÓN UBICACIÓN[\s\S]*?(?:general\))\s*(.+?)\s*(?:FIRMA|OBSERVACIONES)/i);
@@ -104,7 +111,6 @@
 
         return resultado;
     }
-
     btnProcesar.addEventListener('click', async () => {
         btnProcesar.disabled = true;
         statusDiv.innerText = "Procesando PDFs... por favor espera.";
