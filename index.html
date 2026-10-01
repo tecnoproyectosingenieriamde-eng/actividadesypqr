@@ -150,56 +150,87 @@
 
     function parsearActividades(texto) {
         let actividadesExtraidas = [];
+        // Limpiamos y eliminamos líneas vacías
         let lineas = texto.split('\n').map(l => l.trim()).filter(l => l !== "");
         
-        // Regla más flexible: Busca las dos fechas, sin importar si hay más texto a los lados
-        const regexFecha = /(\d{1,2}\/\d{2}\/\d{2,4})\s+(\d{1,2}\/\d{2}\/\d{2,4})/;
-        
-        for (let i = 0; i < lineas.length; i++) {
-            let matchFecha = lineas[i].match(regexFecha);
-            if (matchFecha) {
-                let fechaInicio = matchFecha[1];
-                let tituloTarea = i >= 2 ? lineas[i-2] : ""; 
-                let descripcion = i >= 1 ? lineas[i-1] : ""; 
+        // Expresión regular para validar una fecha individual (ej: 8/04/26 o 08/04/2026)
+        const regexFechaUnica = /^\d{1,2}\/\d{2}\/\d{2,4}$/;
 
-                // Limpieza si se mezclan los encabezados
-                if (tituloTarea.includes("Nombre Fecha") || tituloTarea.includes("EXPANSIÓN")) {
-                    tituloTarea = lineas[i-1].split(" ")[0]; 
+        for (let i = 0; i < lineas.length - 1; i++) {
+            // Verificamos si la línea 'i' es Fecha Inicio Y la línea 'i+1' es Fecha Fin
+            if (regexFechaUnica.test(lineas[i]) && regexFechaUnica.test(lineas[i+1])) {
+                let fechaInicio = lineas[i];
+                let fechaFin = lineas[i+1];
+                
+                // La descripción está en la línea inmediatamente anterior a la Fecha Inicio
+                let textoPrevio = (i > 0) ? lineas[i-1] : "";
+
+                // Evitar capturar encabezados de la tabla
+                if (!textoPrevio || textoPrevio.includes("Fecha de inicio") || textoPrevio.includes("Nombre")) {
+                    continue;
                 }
 
-                // Extraer el Mes
+                // Separar el Tipo de Actividad (Título en MAYÚSCULAS) de la Descripción
+                let tipoActividad = "";
+                let descripcion = textoPrevio;
+
+                // Coincidir con títulos en MAYÚSCULAS al inicio (ej: EXPANSIÓN, ORGANIZACIÓN BODEGA, OBRA EXCLUSIVA DE EXPANSIÓN)
+                let matchTipo = textoPrevio.match(/^([A-ZÁÉÍÓÚÑ0-9\s]{3,})\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ].*)$/);
+                if (matchTipo) {
+                    tipoActividad = matchTipo[1].trim();
+                    descripcion = matchTipo[2].trim();
+                } else {
+                    tipoActividad = textoPrevio;
+                }
+
+                // Extraer el Nombre del MES
                 let mesStr = "";
                 let partesFecha = fechaInicio.split("/");
                 if (partesFecha.length === 3) {
                     const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-                    mesStr = meses[parseInt(partesFecha[1], 10) - 1];
+                    let numMes = parseInt(partesFecha[1], 10);
+                    if (numMes >= 1 && numMes <= 12) {
+                        mesStr = meses[numMes - 1];
+                    }
                 }
 
-                // Análisis de Inteligencia Artificial básica en la descripción
-                let direccionMatch = descripcion.match(/(?:sector|barrio|vereda|cra|calle)\s+([^,.]+)/i);
-                let direccion = direccionMatch ? direccionMatch[0].trim() : "";
-
+                // Extraer Carga W (ej: 40W, 70W, 6W)
                 let cargaWMatch = descripcion.match(/(\d+)\s*W/i);
                 let cargaW = cargaWMatch ? cargaWMatch[1] : "";
 
-                let tipoLuminaria = "";
-                if (descripcion.toLowerCase().includes("led")) tipoLuminaria = "LED";
-                if (descripcion.toLowerCase().includes("sodio")) tipoLuminaria = "SODIO";
-                if (descripcion.toLowerCase().includes("roy alpha")) tipoLuminaria += " Roy Alpha";
+                // Extraer tecnología si existe en el texto
+                let tech = "";
+                if (/led/i.test(descripcion)) tech += "LED ";
+                if (/sodio/i.test(descripcion)) tech += "SODIO ";
+                if (/roy alpha/i.test(descripcion)) tech += "Roy Alpha";
+                tech = tech.trim();
+
+                let tipoLuminariaFinal = tipoActividad;
+                if (tech && !tipoActividad.toLowerCase().includes(tech.toLowerCase())) {
+                    tipoLuminariaFinal += " " + tech;
+                }
+
+                // Extraer Sector, Barrio, Vereda o Corregimiento
+                let dirMatch = descripcion.match(/(?:sector|barrio|vereda|corregimiento|calle|cra|carrera|parque)\s+(?:de\s+)?([^,.]+)/i);
+                let direccion = dirMatch ? dirMatch[0].trim() : "";
 
                 actividadesExtraidas.push({
                     mes: mesStr,
                     fecha: fechaInicio,
-                    tipoLuminaria: (tituloTarea + " " + tipoLuminaria).trim(),
+                    tipoLuminaria: tipoLuminariaFinal.trim(),
                     cargaW: cargaW,
                     descripcion: descripcion,
                     direccion: direccion
                 });
+
+                // Avanzamos un índice adicional para no reprocesar la Fecha Fin
+                i++;
             }
         }
+        
+        console.log("Actividades procesadas con éxito:", actividadesExtraidas);
         return actividadesExtraidas;
     }
-
     // ======== ENVIADOR A GOOGLE SHEETS ========
 
     // REEMPLAZA ESTA URL CON TU URL DE APPS SCRIPT
